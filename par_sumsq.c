@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <pthread.h>
 
 // aggregate variables
 long sum = 0;
@@ -18,9 +19,14 @@ long odd = 0;
 long min = INT_MAX;
 long max = INT_MIN;
 bool done = false;
+struct TaskQueue {
+  int data;
+  struct TaskQueue * next;
+};
 
 // function prototypes
 void calculate_square(long number);
+void * workerFxn(void * vargp);
 
 /*
  * update global aggregate variables given a number
@@ -59,33 +65,51 @@ void calculate_square(long number)
 int main(int argc, char* argv[])
 {
   // check and parse command line options
-  if (argc != 2) {
-    printf("Usage: sumsq <infile>\n");
+  if (argc != 3) {
+    printf("Usage: par_sumsq <infile>\n");
     exit(EXIT_FAILURE);
   }
-  char *fn = argv[1];
-  
-  // load numbers and add them to the queue
-  FILE* fin = fopen(fn, "r");
-  char action;
-  long num;
 
-  while (fscanf(fin, "%c %ld\n", &action, &num) == 2) {
-    if (action == 'p') {            // process, do some work
-      calculate_square(num);
-    } else if (action == 'w') {     // wait, nothing new happening
-      sleep(num);
-    } else {
-      printf("ERROR: Unrecognized action: '%c'\n", action);
-      exit(EXIT_FAILURE);
-    }
+  const char * numWorkersArg = argv[2];
+  const int numWorkers = atoi(numWorkersArg);
+  pthread_t workers[numWorkers];
+  struct TaskQueue * queue = malloc(sizeof(struct TaskQueue));
+  queue->next = NULL;
+  for (int i = 0; i < numWorkers; i++) {
+    pthread_create(&workers[i], NULL, workerFxn, (void *) queue);
   }
-  fclose(fin);
+
+  for (int i = 0; i < numWorkers; i++) {
+    pthread_join(workers[i], NULL);
+  }
+
+  // char *fn = argv[1];
+  // // load numbers and add them to the queue
+  // FILE* fin = fopen(fn, "r");
+  // char action;
+  // long num;
+
+  // while (fscanf(fin, "%c %ld\n", &action, &num) == 2) {
+  //   if (action == 'p') {            // process, do some work
+  //     calculate_square(num);
+  //   } else if (action == 'w') {     // wait, nothing new happening
+  //     sleep(num);
+  //   } else {
+  //     printf("ERROR: Unrecognized action: '%c'\n", action);
+  //     exit(EXIT_FAILURE);
+  //   }
+  // }
+  // fclose(fin);
   
-  // print results
-  printf("%ld %ld %ld %ld\n", sum, odd, min, max);
+  // // print results
+  // printf("%ld %ld %ld %ld\n", sum, odd, min, max);
   
   // clean up and return
   return (EXIT_SUCCESS);
+}
+
+void * workerFxn(void * vargp) {
+  printf("Running worker\n");
+  return NULL;
 }
 
