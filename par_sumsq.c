@@ -13,7 +13,7 @@ long max = INT_MIN;
 bool done = false;
 pthread_mutex_t queueLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t sumLock = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t actionCond = PTHREAD_COND_INITIALIZER;
+pthread_cond_t writeCond = PTHREAD_COND_INITIALIZER;
 
 struct TaskQueueNode {
   long data;
@@ -72,7 +72,7 @@ long deQueue(struct TaskQueue * queue) {
   return data;
 }
 
-void deleteQueue(struct TaskQueue * queue) {
+void freeQueue(struct TaskQueue * queue) {
   while (queue->front) deQueue(queue);
 
   free(queue);
@@ -145,6 +145,7 @@ int main(int argc, char* argv[])
     if (action == 'p') {            // process, do some work
       pthread_mutex_lock(&queueLock);
       enQueue(queue, num);
+      pthread_cond_signal(&writeCond);
       pthread_mutex_unlock(&queueLock);
     } else if (action == 'w') {     // wait, nothing new happening
       sleep(num);
@@ -157,7 +158,16 @@ int main(int argc, char* argv[])
   
   done = true;
 
-  deleteQueue(queue);
+  pthread_mutex_lock(&queueLock);
+  pthread_cond_broadcast(&writeCond);
+  pthread_mutex_unlock(&queueLock);
+
+  void * workerReturn;
+  for (int i = 0; i < numWorkers; i++) {
+    pthread_join(workers[i], &workerReturn);
+  }
+
+  freeQueue(queue);
 
   // print results
   printf("%ld %ld %ld %ld\n", sum, odd, min, max);
@@ -172,6 +182,16 @@ void * workerFxn(void * args) {
   while (!done) {
     pthread_mutex_lock(&queueLock);
 
+    while (!queue->front && !done) {
+      pthread_cond_wait(&writeCond, &queueLock);
+    }
+
+    if (done) {
+      pthread_mutex_unlock(&queueLock);
+
+      break;
+    }
+
     const long number = deQueue(queue);
 
     pthread_mutex_unlock(&queueLock);
@@ -181,4 +201,3 @@ void * workerFxn(void * args) {
 
   return (EXIT_SUCCESS);
 }
-
