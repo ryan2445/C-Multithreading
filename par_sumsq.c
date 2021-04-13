@@ -12,6 +12,8 @@ long min = INT_MAX;
 long max = INT_MIN;
 bool done = false;
 pthread_mutex_t queueLock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t sumLock = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t actionCond = PTHREAD_COND_INITIALIZER;
 
 struct TaskQueueNode {
   long data;
@@ -40,30 +42,40 @@ struct TaskQueue * createQueue() {
   return q;
 }
 
-void enQueue(struct TaskQueue * q, long data) {
+void enQueue(struct TaskQueue * queue, long data) {
   struct TaskQueueNode * temp = newNode(data);
 
-  if (q->back == NULL) {
-    q->front = q->back = temp;
+  if (queue->back == NULL) {
+    queue->front = queue->back = temp;
 
     return;
   }
 
-  q->back->next = temp;
+  queue->back->next = temp;
 
-  q->back = temp;
+  queue->back = temp;
 }
 
-void deQueue(struct TaskQueue * q) {
-  if (q->front == NULL) return;
+long deQueue(struct TaskQueue * queue) {
+  if (queue->front == NULL) return 0;
 
-  struct TaskQueueNode * temp = q->front;
+  struct TaskQueueNode * temp = queue->front;
 
-  q->front = q->front->next;
+  queue->front = queue->front->next;
 
-  if (q->front == NULL) q->back = NULL;
+  if (queue->front == NULL) queue->back = NULL;
+
+  const long data = temp->data;
 
   free(temp);
+
+  return data;
+}
+
+void deleteQueue(struct TaskQueue * queue) {
+  while (queue->front) deQueue(queue);
+
+  free(queue);
 }
 
 // function prototypes
@@ -81,6 +93,8 @@ void calculate_square(long number)
   // ok that was not so hard, but let's pretend it was
   // simulate how hard it is to square this number!
   sleep(number);
+
+  pthread_mutex_lock(&sumLock);
 
   // let's add this to our (global) sum
   sum += the_square;
@@ -100,6 +114,8 @@ void calculate_square(long number)
   if (number > max) {
     max = number;
   }
+
+  pthread_mutex_unlock(&sumLock);
 }
 
 
@@ -139,15 +155,30 @@ int main(int argc, char* argv[])
   }
   fclose(fin);
   
-  // // print results
-  // printf("%ld %ld %ld %ld\n", sum, odd, min, max);
+  done = true;
+
+  deleteQueue(queue);
+
+  // print results
+  printf("%ld %ld %ld %ld\n", sum, odd, min, max);
   
   // clean up and return
   return (EXIT_SUCCESS);
 }
 
 void * workerFxn(void * args) {
-  printf("Running worker\n");
-  return NULL;
+  struct TaskQueue * queue = (struct TaskQueue *) args;
+  
+  while (!done) {
+    pthread_mutex_lock(&queueLock);
+
+    const long number = deQueue(queue);
+
+    pthread_mutex_unlock(&queueLock);
+
+    calculate_square(number);
+  }
+
+  return (EXIT_SUCCESS);
 }
 
