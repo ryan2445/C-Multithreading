@@ -1,11 +1,3 @@
-/*
- * sumsq.c
- *
- * CS 446.646 Project 1 (Pthreads)
- *
- * Compile with --std=c99
- */
-
 #include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -19,21 +11,70 @@ long odd = 0;
 long min = INT_MAX;
 long max = INT_MIN;
 bool done = false;
-struct TaskQueue {
-  int data;
-  struct TaskQueue * next;
+pthread_mutex_t queueLock = PTHREAD_MUTEX_INITIALIZER;
+
+struct TaskQueueNode {
+  long data;
+  struct TaskQueueNode * next;
 };
+
+struct TaskQueue {
+  struct TaskQueueNode * front, * back;
+};
+
+struct TaskQueueNode * newNode(long data) {
+  struct TaskQueueNode * temp = (struct TaskQueueNode *) malloc(sizeof(struct TaskQueueNode));
+
+  temp->data = data;
+
+  temp->next = NULL;
+
+  return temp;
+}
+
+struct TaskQueue * createQueue() {
+  struct TaskQueue * q = (struct TaskQueue *) malloc(sizeof(struct TaskQueue));
+
+  q->front = q->back = NULL;
+
+  return q;
+}
+
+void enQueue(struct TaskQueue * q, long data) {
+  struct TaskQueueNode * temp = newNode(data);
+
+  if (q->back == NULL) {
+    q->front = q->back = temp;
+
+    return;
+  }
+
+  q->back->next = temp;
+
+  q->back = temp;
+}
+
+void deQueue(struct TaskQueue * q) {
+  if (q->front == NULL) return;
+
+  struct TaskQueueNode * temp = q->front;
+
+  q->front = q->front->next;
+
+  if (q->front == NULL) q->back = NULL;
+
+  free(temp);
+}
 
 // function prototypes
 void calculate_square(long number);
-void * workerFxn(void * vargp);
+void * workerFxn(void * args);
 
 /*
  * update global aggregate variables given a number
  */
 void calculate_square(long number)
 {
-
   // calculate the square
   long the_square = number * number;
 
@@ -73,33 +114,30 @@ int main(int argc, char* argv[])
   const char * numWorkersArg = argv[2];
   const int numWorkers = atoi(numWorkersArg);
   pthread_t workers[numWorkers];
-  struct TaskQueue * queue = malloc(sizeof(struct TaskQueue));
-  queue->next = NULL;
+  struct TaskQueue * queue = createQueue();
   for (int i = 0; i < numWorkers; i++) {
     pthread_create(&workers[i], NULL, workerFxn, (void *) queue);
   }
 
-  for (int i = 0; i < numWorkers; i++) {
-    pthread_join(workers[i], NULL);
+  // load numbers and add them to the queue
+  char *fn = argv[1];
+  FILE* fin = fopen(fn, "r");
+  char action;
+  long num;
+
+  while (fscanf(fin, "%c %ld\n", &action, &num) == 2) {
+    if (action == 'p') {            // process, do some work
+      pthread_mutex_lock(&queueLock);
+      enQueue(queue, num);
+      pthread_mutex_unlock(&queueLock);
+    } else if (action == 'w') {     // wait, nothing new happening
+      sleep(num);
+    } else {
+      printf("ERROR: Unrecognized action: '%c'\n", action);
+      exit(EXIT_FAILURE);
+    }
   }
-
-  // char *fn = argv[1];
-  // // load numbers and add them to the queue
-  // FILE* fin = fopen(fn, "r");
-  // char action;
-  // long num;
-
-  // while (fscanf(fin, "%c %ld\n", &action, &num) == 2) {
-  //   if (action == 'p') {            // process, do some work
-  //     calculate_square(num);
-  //   } else if (action == 'w') {     // wait, nothing new happening
-  //     sleep(num);
-  //   } else {
-  //     printf("ERROR: Unrecognized action: '%c'\n", action);
-  //     exit(EXIT_FAILURE);
-  //   }
-  // }
-  // fclose(fin);
+  fclose(fin);
   
   // // print results
   // printf("%ld %ld %ld %ld\n", sum, odd, min, max);
@@ -108,7 +146,7 @@ int main(int argc, char* argv[])
   return (EXIT_SUCCESS);
 }
 
-void * workerFxn(void * vargp) {
+void * workerFxn(void * args) {
   printf("Running worker\n");
   return NULL;
 }
