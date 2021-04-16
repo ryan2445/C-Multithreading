@@ -14,7 +14,7 @@ sumsq: sumsq.c
 # eventually you will need to create a parallel version:
 #
 par_sumsq: par_sumsq.c
-	gcc -g -O0 --std=c99 -Wall -o par_sumsq par_sumsq.c -lpthread
+	gcc -g -O2 --std=c99 -Wall -o par_sumsq par_sumsq.c -lpthread
 
 #
 # whenever you want to 'clean and try again', do 'make clean':
@@ -40,5 +40,8 @@ test.txt:
 	@echo "==== (creating test.txt) ===="
 	@printf "p 1\nw 2\np 2\np 3\n" > test.txt
 
+#
+#	The '2' below is the number of threads to spin up
+#
 par: par_sumsq test.txt
-	time -p ./par_sumsq ./test.txt 2>&1 3
+	time -p ./par_sumsq ./test.txt 2>&1 2

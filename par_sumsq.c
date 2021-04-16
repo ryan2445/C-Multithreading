@@ -1,3 +1,10 @@
+/*
+ *  Ryan Hoffman
+ *  CS 446
+ *  Project 5 - PThreads
+ *  4/16/2021 
+ */
+
 #include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -26,7 +33,7 @@ struct TaskQueue {
   struct TaskQueueNode * front, * back;
 };
 
-//  newNode - returns new TaskQueueNode with data set
+//  newNode - returns new TaskQueueNode with data var set
 struct TaskQueueNode * newNode(long data) {
   struct TaskQueueNode * temp = (struct TaskQueueNode *) malloc(sizeof(struct TaskQueueNode));
 
@@ -65,7 +72,8 @@ void enQueue(struct TaskQueue * queue, long data) {
 }
 
 long deQueue(struct TaskQueue * queue) {
-  //  If queue is empty, return 0 so we don't change the sum
+  //  If queue is empty, return 0 so we don't change the aggregate variables
+  //  Hopefully we aren't ever calling this function when the queue is empty but just in case :)
   if (queue->front == NULL) return 0;
 
   //  Get the node at the front of the queue
@@ -74,7 +82,7 @@ long deQueue(struct TaskQueue * queue) {
   //  Set the front of the queue to the second node in the queue
   queue->front = queue->front->next;
 
-  //  If there was only 1 node in the queue, set the back to null
+  //  If there was only 1 node in the queue, set the back to null too
   if (queue->front == NULL) queue->back = NULL;
 
   //  Get the number to be squared from the front node
@@ -91,7 +99,7 @@ void freeQueue(struct TaskQueue * queue) {
   //  While the queue is not empty, delete nodes
   while (queue->front) deQueue(queue);
 
-  //  Then delete teh queue
+  //  Then delete the queue
   free(queue);
 }
 
@@ -111,7 +119,7 @@ void calculate_square(long number)
   // simulate how hard it is to square this number!
   sleep(number);
 
-  //  Lock the modification of the sum, odd, min, max variables
+  //  Lock the modification of the sum, odd, min, max variables so threads aren't writing to these at the same time
   pthread_mutex_lock(&sumLock);
 
   // let's add this to our (global) sum
@@ -173,17 +181,11 @@ int main(int argc, char* argv[])
   while (fscanf(fin, "%c %ld\n", &action, &num) == 2) {
     //  Process, do some work
     if (action == 'p') {
-      //  Lock the queue
-      pthread_mutex_lock(&queueLock);
-
       //  Push the number on the queue
       enQueue(queue, num);
 
       //  Signal a process that is asleep to start de-queueing
       pthread_cond_signal(&writeCond);
-
-      //  Unlock the queue
-      pthread_mutex_unlock(&queueLock);
     } 
     //  Wait, nothing new happening
     else if (action == 'w') {
@@ -198,18 +200,15 @@ int main(int argc, char* argv[])
 
   //  Close the file
   fclose(fin);
+
+  //  Wait for queue to be empty before we tell threads to stop processing
+  while (queue->front) {}
   
   //  Set done to true to stop threads from trying to de-queue numbers
   done = true;
 
-  //  Lock the queue
-  pthread_mutex_lock(&queueLock);
-
-  //  Broadcast to all threads who are stuck inside while(!done) loop in workerFxn
+  //  Broadcast to all threads who are stuck waiting for queue in workerFxn
   pthread_cond_broadcast(&writeCond);
-
-  //  Unlock the queue
-  pthread_mutex_unlock(&queueLock);
 
   //  Terminate our threads
   void * workerReturn;
@@ -236,14 +235,14 @@ void * workerFxn(void * args) {
     //  Lock the queue
     pthread_mutex_lock(&queueLock);
 
-    //  If there are no numbers on the queue but we aren't done queueing, wait for broadcast from master
+    //  If there are no numbers on the queue but we aren't done processing, wait for writeCond signal from master thread
     while (!queue->front && !done) {
       pthread_cond_wait(&writeCond, &queueLock);
     }
 
     //  If master broadcasts writeCond but all numbers are already processed, exit loop
     if (done) {
-      //  Unlock the queue
+      //  Don't leave the queue locked!
       pthread_mutex_unlock(&queueLock);
 
       //  Break freeeeeee
